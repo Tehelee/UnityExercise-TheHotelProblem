@@ -1,0 +1,47 @@
+PlayQ - Phantoms High Level
+
+1. Assuming at least one thing from the Architecture brief:
+
+	* "States" refer to an object that contains at least a Location and an Action.
+	* "Location" refers to all the positional information needed to represent a character in-world, up to and including any position and rotation axii.
+	* Actions have a base class I'll be refering too, and new Actions can be added based from it without affecting my use of the base class to support future expansion.
+	* I'll pseudo-code calls to a pathing system for movement as the actual API / system to use will vary by the actual game.
+	* There is an idle action for when players are doing nothing but standing in a particular location.
+	* References to Actions are done by a hash or an enum, but for this example I'll assume enum, but either is possible, as long as it can be a version-agnostic key.
+
+
+2. StateMonitor / StateHistory
+
+	Through Async / Await, a single StateMonitor class will iterate each player and queue their current state to be fetched by the Phantoms.
+
+	In addition to caching just the current state, an StateHistory collection object will be updated to point the previous state to the new one.
+	The StateHistory is a collection of movesets, each layer representing a state taken after it's container's.
+
+		Dictionary< State, Dictionary< State, List< State >>>
+
+3. Phantoms
+	
+	Phantoms can either be Async / Await, or DOTS, but they'll move to mime the cached state of their player, pathing first, then activating the animation.
+	Once the action of the current state is complete, the phantom will store the action they just made in a queue, keeping only the last two actions performed in memory.
+
+	If the action is looping, endless, proceed to continue with it until a new and different state is available from the StateMonitor.
+	Afterwards, it'll check the cached state of their player, if their state queue is empty, we'll use the StateHistory to estimate a follow up.
+
+	Taking the last two actions performed as keys, check if there's a matching List in their StateHistory.
+	If the list is empty or none are available, only check the previous action, finding the nearest available action from the nested keys.
+	If there still isn't a valid action, pick something random nearby, otherwise if that's not possible, idly move with a delay.
+
+4. Action Oracle
+
+	An ActionOracle is a hard-coded collection that can be fallen back to instead of randomizing things.
+	The ActionOracle is similar to the StateHistory object, but it's a collection of Actions without locations, with the addition of weights in the deepest layer.
+
+		Dictionary< Action, Dictionary< Action, Dictionary< Action, Weight >>>
+
+	While a hard-coded ActionOracle could be constructed and maintained by hand, automating it would be best,
+	Ideally it could be included on the in-dev on the server as players perform actions.
+	Eacb action taken would incrementg the weight by one each time it finds an existing entry, or adding an entry if none exists on that tripple combination of actions.
+	On shutdown, the server would store this collection in json on disk, then load it on initialization.
+	If this was running on the in-house dev server continously for routine playtests with the team, it could be shipped with every new version of the game.
+
+	If there's an ActionOracle available, use it to find an available nearby action, running in descending order of weight, randomizing on identical weights.
